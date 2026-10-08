@@ -61,5 +61,31 @@ driver at hotel. Hotel dispute → contact team. Remarks optional.
 ## 4. Data (Phase 1 output)
 - `data/chunks.jsonl`: 174 chunks, one per heading/subheading via `src/ingest.py` (PyMuPDF, font-size
   headings, page numbers kept; text-layout tables normalised to Markdown). Delivery 42 / DC-OTP 41 /
-  Pickup 42 / Trip 49. Schema: `{chunk_id, doc, module, section, page, page_end, text, tags, type, last_updated}`.
-- `eval/golden_qa.jsonl`: 42 questions covering all modules + edge cases + refusals; each cites doc/section/page.
+  Pickup 42 / Trip 49. Schema: `{chunk_id, stable_id, doc, module, section, page, page_end, text, tags,
+  type, retrievable, last_updated}`. `chunk_id` is positional; `stable_id` is a sha1 content hash —
+  caching (Phase 6) must key on `stable_id`. `type == "metadata"` chunks have `retrievable: false`.
+- `eval/golden_qa.jsonl`: 50 questions covering all modules + edge cases + refusals; each cites doc/section/page.
+- `eval/verify_chunks.py`: automated Phase-1 gate (dup ids, required fields, invisible-char scan, page ranges,
+  per-doc counts, golden citation resolution incl. `acceptable_sources`, refusal/open-question coverage).
+  Current status: PASS, 0 hard failures (29 warnings: 27 short FAQ answer chunks + 2 uncovered open-question
+  chunks c040, c138 — both documented gaps, see below).
+
+## 5. Chunking-review patch notes
+- **Invisible chars (P0):** PDFs embed U+200B (ZWSP) after list numbers, values, colons, `?`. Stripped in
+  `extract_headed_blocks`, `normalise_text`, `split_delivery_faq` so section strings/BM25/cache keys compare exactly.
+- **Citation policy:** several facts live in 2+ chunks (e.g. no-edit-after-OTP = Delivery §13 + DC
+  "Editing After OTP Authentication" + DC "Important Rules" + DC FAQ). Golden items carry
+  `acceptable_sources: [{doc, section, page}]`; the grader/verifier accepts the primary citation OR any
+  acceptable source. 14 of 50 items have alternates.
+- **Offline / DC-copy boundary (spec decision):** Trip doc "no network → contact the team" (q027) is a
+  *driver-action* rule — answerable. DC doc "Offline/no-network behavior" (q046) asks about *app behavior* —
+  refusal. Likewise "hotel receives a copy" (q018, yes) vs "how the hotel receives it" (q045, refusal).
+  q045/q046 pair deliberately against q018/q027 as confusion tests.
+- **Tags:** one tag per keyword group (no bundling); `hotel`/`warehouse`/`perimeter`/`linen` no longer drag in
+  `trip`/`start trip`/`start visit`/`return fresh`. Tags are hints only, never module filters alone.
+- **Retrieval notes (Phase 3):** exclude `retrievable == false`; embed `f"{doc} — {section}\n{text}"` so tiny
+  FAQ chunks (<40 chars, e.g. "Yes.") carry context; cite section as-is. Hybrid keyword list:
+  Return Fresh, Heavy Soil, OTP, Digital DC, Start Visit, End Trip, Shortage Reason.
+- **Known gaps (accepted):** c040 Delivery-shortage operational detail (partially answerable, no dedicated
+  question) and c138 multiple-Regular-Order edge behavior have no golden coverage; internal Trip assignment
+  method likewise untested.
