@@ -86,6 +86,17 @@ driver at hotel. Hotel dispute → contact team. Remarks optional.
 - **Retrieval notes (Phase 3):** exclude `retrievable == false`; embed `f"{doc} — {section}\n{text}"` so tiny
   FAQ chunks (<40 chars, e.g. "Yes.") carry context; cite section as-is. Hybrid keyword list:
   Return Fresh, Heavy Soil, OTP, Digital DC, Start Visit, End Trip, Shortage Reason.
+  Keyword channel uses OR semantics (AND zeroes refusal chunks) with hyphens sanitized;
+  parsed tsquery is logged per question. Query params cast `%s::vector`.
+- **Rerank (locked):** fused top-15 rescored by Jev steered noul (`src/rerank.py`, V2 criteria:
+  true = "contains the specific fact/rule/quantity, or explicitly marks it unspecified",
+  false = "shares words/topics but neither"). Generic relevance scoring was measured to
+  bury refusal sources (q045 #7→#13) and is banned here. Final order: normalized
+  combo `0.5*rrf + 0.5*jev` (pure-Jev sort fixed q045 but broke q049's table chunk;
+  the combo keeps both). No threshold discard (uncalibrated). Requires `JEV_API_KEY`.
+- **G2 results (eval/eval_retrieval.py):** RRF-only 49/50 (q045 miss) → RRF+Jev combo
+  **50/50 = 100%, refusals 10/10**, rank-of-first-hit {1:35, 2:9, 3:4, 4:1, 5:1} —
+  strictly better than either signal alone (RRF-only rank-1: 32; pure-Jev rank-1: 28).
 - **Known gaps (accepted):** c040 Delivery-shortage operational detail (partially answerable, no dedicated
   question) and c138 multiple-Regular-Order edge behavior have no golden coverage; internal Trip assignment
   method likewise untested.
