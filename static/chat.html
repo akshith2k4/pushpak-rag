@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pushpak Q&amp;A — chat</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+  #log { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; min-height: 300px; margin-bottom: 1rem; }
+  .q { font-weight: 600; margin: 0.8rem 0 0.2rem; }
+  .a { white-space: pre-wrap; margin: 0 0 0.2rem; }
+  .meta { color: #666; font-size: 0.8rem; margin-bottom: 0.6rem; }
+  #row { display: flex; gap: 0.5rem; }
+  #box { flex: 1; padding: 0.5rem; font-size: 1rem; }
+  label { font-size: 0.85rem; color: #444; }
+</style>
+</head>
+<body>
+<h2>Pushpak Q&amp;A</h2>
+<div id="log"></div>
+<div id="row">
+  <input id="box" placeholder="Ask about deliveries, pickups, DC/OTP, trips…" autocomplete="off">
+  <button id="send">Send</button>
+</div>
+<p>
+  <label><input type="checkbox" id="rerank" checked> rerank</label>
+  <label><input type="checkbox" id="cache" checked> cache</label>
+</p>
+<script>
+const log = document.getElementById('log');
+const box = document.getElementById('box');
+async function send() {
+  const q = box.value.trim();
+  if (!q) return;
+  box.value = '';
+  log.innerHTML += `<div class="q">You: ${q}</div><div class="a" id="pending">…</div>`;
+  const t0 = performance.now();
+  let d;
+  try {
+    const r = await fetch('/ask', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: q,
+        rerank: document.getElementById('rerank').checked,
+        use_cache: document.getElementById('cache').checked})
+    });
+    if (!r.ok) throw new Error(`server ${r.status}`);
+    d = await r.json();
+  } catch (e) {
+    document.getElementById('pending').textContent = `Error: ${e.message} (server unreachable?)`;
+    return;
+  }
+  if (d.error) {
+    document.getElementById('pending').textContent = `Error: ${d.error}`;
+    return;
+  }
+  document.getElementById('pending').remove();
+  const tools = (d.tool_calls || []).map(t => t.name).join(', ') || 'none';
+  const srcs = (d.sources || []).map(s => `${s.section} (p${s.page})`).join(' · ');
+  log.innerHTML += `<div class="a">${d.answer.replace(/</g, '&lt;')}</div>
+    <div class="meta">${((performance.now() - t0) / 1000).toFixed(1)}s · tools: ${tools} · cache: ${d.debug?.cache ?? '?'} · sources: ${srcs}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+document.getElementById('send').onclick = send;
+box.onkeydown = e => { if (e.key === 'Enter') send(); };
+</script>
+</body>
+</html>

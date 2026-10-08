@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+server.log
+nohup.out
+eval/run.log
+eval/answer_eval.jsonl

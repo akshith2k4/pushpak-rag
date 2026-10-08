@@ -38,7 +38,14 @@ def get_pool() -> ConnectionPool:
         url = os.environ.get("DATABASE_URL")
         if not url:
             raise RuntimeError("DATABASE_URL is not set (env or .env)")
-        _pool = ConnectionPool(url, min_size=1, max_size=5, kwargs={"connect_timeout": 15})
+        _pool = ConnectionPool(
+            url,
+            min_size=1,
+            max_size=5,
+            check=ConnectionPool.check_connection,
+            max_idle=300.0,
+            kwargs={"connect_timeout": 15},
+        )
     return _pool
 
 

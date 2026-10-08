@@ -5,6 +5,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from src.db import close_pool, get_pool
 
@@ -16,6 +18,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Pushpak Q&A")
+
+
+@app.get("/")
+def chat() -> FileResponse:
+    return FileResponse("static/chat.html")
+
+
+class AskRequest(BaseModel):
+    question: str
+    rerank: bool = True
+    top_k: int = 5
+    use_cache: bool = True
+    tools_enabled: bool = True
 
 
 @app.get("/health")
@@ -30,7 +45,11 @@ def health() -> dict:
     except Exception as e:  # noqa: BLE001
         status["db"] = f"error: {type(e).__name__}: {e}"
     redis_url = os.environ.get("REDIS_URL", "").strip()
-    if not redis_url:
+    from src import cache as cache_mod
+
+    if cache_mod._cfg()[0] is not None:
+        status["redis"] = "ok" if cache_mod.ping() else "error: upstash unreachable"
+    elif not redis_url:
         status["redis"] = "not_configured"
     else:
         try:
@@ -42,3 +61,14 @@ def health() -> dict:
         except Exception as e:  # noqa: BLE001
             status["redis"] = f"error: {type(e).__name__}: {e}"
     return status
+
+
+@app.post("/ask")
+def ask(req: AskRequest) -> dict:
+    from src.generate import answer
+
+    try:
+        return answer(req.question, top_k=req.top_k, rerank=req.rerank,
+                      use_cache=req.use_cache, tools_enabled=req.tools_enabled)
+    except Exception as e:  # noqa: BLE001
+        return {"answer": "Error answering question.", "error": f"{type(e).__name__}: {e}"}

@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.git
+.gitignore
+.pytest_cache
+eval/run.log
+eval/answer_eval.jsonl
+server.log

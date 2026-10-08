@@ -97,6 +97,47 @@ driver at hotel. Hotel dispute → contact team. Remarks optional.
 - **G2 results (eval/eval_retrieval.py):** RRF-only 49/50 (q045 miss) → RRF+Jev combo
   **50/50 = 100%, refusals 10/10**, rank-of-first-hit {1:35, 2:9, 3:4, 4:1, 5:1} —
   strictly better than either signal alone (RRF-only rank-1: 32; pure-Jev rank-1: 28).
+
+## 6. Phase 4/5 (rules engine + generation + /ask)
+- `src/rules.py`: pure functions (`calculate_return_fresh`, `validate_delivery`,
+  `validate_pickup`, `check_photo_requirements`, `can_end_trip`,
+  `pending_pickup_blocks_trip() -> False`, `can_edit_dc`) + `FUNCTION_DECLARATIONS`
+  + `call_function` dispatcher. `eval/test_rules.py`: 10/10 green.
+- `src/generate.py`: `GEN_MODEL` (default gemini-2.5-flash, verified on key), temp 0,
+  strict prompt (context-only, verbatim refusal, mechanism-refusal rule, confusion
+  guards, function mandate, `Source:` citations), tool loop (max 3 rounds) with
+  citation safety net. `POST /ask {question, rerank, top_k}` wired in `src/api.py`.
+- Learnings: REST generate URL needs `models/` prefix; echoed functionCall parts
+  must be rebuilt name/args-only (response `thoughtSignature` is rejected);
+  retry-with-backoff on 429/503 in `_generate`.
+- Smoke test 10/10 (calculations via tools, refusals exact incl. q045, citations
+  present); `/ask` verified over HTTP (500/499 → tool result 1, correct + cited).
+
+## 7. Phase 7 (answer-level eval, Groq gpt-oss→qwen — first full run)
+- `eval/evaluate.py`: deterministic checks (verbatim refusal, expected numbers,
+  NFKC-normalized citation match) + Gemini→Groq judge (CORRECT/INCORRECT).
+  Gemini generate quota exhausted mid-build; generation moved to Groq
+  (`LLM_PROVIDER`, `qwen/qwen3.8-27b`, OpenAI-compatible tools).
+- Measured (50 q, from run.log verdict lines): judge **48/50** — q024 is a documented
+  judge false-negative (answer correct per Trip/End-Trip chunks), q042 was a refusal
+  *format* deviation (semantically correct). Refusals verbatim 9/10 → **10/10 after
+  the `_normalize_refusal` format guard** (verified live on q042 re-query).
+  Calculations judge-backed 5/5. Citations 15/40 under the old all-pre-listed rule —
+  checker artifact (sampled failures = valid primary + real unlisted secondary, zero
+  fabricated citations seen); rule fixed to exists-in-chunks + ≥1-acceptable.
+- Harness fixes: file-truncation bug (reporting block reopened JSONL with "w",
+  wiping 50 rows — metrics reconstructed from run.log), patient retries,
+  incremental writes, `--resume` (retries ERROR/JUDGE_ERROR/UNPARSEABLE),
+  brace-tolerant judge-JSON parse, `.format` brace-escape bug.
 - **Known gaps (accepted):** c040 Delivery-shortage operational detail (partially answerable, no dedicated
   question) and c138 multiple-Regular-Order edge behavior have no golden coverage; internal Trip assignment
   method likewise untested.
+
+## 8. Phase 6 (semantic cache, live on Upstash)
+- `src/cache.py`: Upstash REST backend (exact sha1 key + 200-entry index scanned
+  with local cosine). First token was read-restricted (SET→NOPERM, fail-closed);
+  replacement token verified full read/write.
+- Verified: cold miss 12.6s → store; exact repeat **2.4s identical**; unseen
+  paraphrase **semantic hit 0.957 in 5.3s**; TTL ≈ 86400s; fingerprint mismatch
+  → miss (re-ingest safe). Threshold calibrated 0.95 → **0.85** on a measured
+  true paraphrase at 0.877. Wired into `answer()`/`/ask` (`use_cache` flag).
